@@ -133,10 +133,15 @@ export async function listMessages(conversationId: string): Promise<Message[]> {
   return wireMessages.map(mapMessage);
 }
 
-export async function sendMessage(conversationId: string, content: string, mode?: string): Promise<Message> {
+export async function sendMessage(
+  conversationId: string,
+  content: string,
+  mode?: string,
+  model?: string,
+): Promise<Message> {
   const wireMessage = await request<WireMessage>(`/v1/conversations/${conversationId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ content, model: "auto", mode: mode ?? null }),
+    body: JSON.stringify({ content, model: model ?? "auto", mode: mode ?? null }),
   });
   // Every send spends tokens — let the usage meter know immediately
   // rather than waiting for its next poll interval. Any component can

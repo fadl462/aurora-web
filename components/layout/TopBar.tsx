@@ -4,19 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { logout } from "@/lib/auth";
 import { UsageMeter } from "./UsageMeter";
-
-const MODELS = [
-  { name: "Auto Mode", sub: "Routes to the best model per task", dot: "bg-gradient-to-br from-aurora-1 via-aurora-2 to-aurora-3" },
-  { name: "Aurora Ultra", sub: "Deepest reasoning, slower", dot: "bg-aurora-3" },
-  { name: "Claude", sub: "Anthropic", dot: "bg-[#E8825C]" },
-  { name: "GPT", sub: "OpenAI", dot: "bg-[#74C08A]" },
-  { name: "Gemini", sub: "Google", dot: "bg-aurora-2" },
-] as const;
+import { MODEL_OPTIONS, useModel } from "@/lib/model-context";
 
 export function TopBar({ breadcrumb }: { breadcrumb: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState(0);
+  const { model: selectedId, setModel } = useModel();
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,7 +20,7 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
     return () => document.removeEventListener("click", onClick);
   }, []);
 
-  const model = MODELS[selected];
+  const model = MODEL_OPTIONS.find((m) => m.id === selectedId);
 
   return (
     <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border-soft px-[22px]">
@@ -52,11 +45,11 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
 
           {open && (
             <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-[250px] rounded-md border border-border bg-surface-raised p-1.5 shadow-2xl">
-              {MODELS.map((m, i) => (
+              {MODEL_OPTIONS.map((m) => (
                 <button
-                  key={m.name}
+                  key={m.id}
                   onClick={() => {
-                    setSelected(i);
+                    setModel(m.id);
                     setOpen(false);
                   }}
                   className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-surface-hover"
@@ -66,7 +59,7 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
                     <span className="block text-[12.5px] font-medium">{m.name}</span>
                     <span className="block truncate text-[11px] text-text-faint">{m.sub}</span>
                   </span>
-                  {i === selected && (
+                  {m.id === selectedId && (
                     <svg className="ml-auto flex-shrink-0 text-aurora-1" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
                       <path d="M20 6 9 17l-5-5" />
                     </svg>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Message } from "@/lib/types";
 import { ApiError, createConversation, listMessages, sendMessage } from "@/lib/api";
+import { useModel } from "@/lib/model-context";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingIndicator } from "./MessageBubble";
 
@@ -11,6 +12,7 @@ type ConnectionState = "connecting" | "ready" | "error";
 
 export function ChatThread() {
   const router = useRouter();
+  const { model } = useModel();
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
@@ -79,7 +81,7 @@ export function ChatThread() {
     setErrorMessage(null);
 
     try {
-      const assistantMessage = await sendMessage(conversationId, trimmed);
+      const assistantMessage = await sendMessage(conversationId, trimmed, undefined, model);
       setIsTyping(false);
       setMessages((prev) => [...prev, assistantMessage]);
       scrollToBottom();
