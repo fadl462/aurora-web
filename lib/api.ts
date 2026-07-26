@@ -311,6 +311,85 @@ export async function updateDocument(id: string, changes: { title?: string; cont
   return mapDocument(wireDoc);
 }
 
+// --- Generated Documents (real .pptx/.docx/.xlsx from a prompt) ---
+
+export type GeneratedDocFormat = "pptx" | "docx" | "xlsx";
+
+interface WireGeneratedDocument {
+  id: string;
+  title: string;
+  format: GeneratedDocFormat;
+  prompt: string;
+  is_placeholder: boolean;
+  size_bytes: number;
+  created_at: string;
+}
+
+export interface GeneratedDoc {
+  id: string;
+  title: string;
+  format: GeneratedDocFormat;
+  prompt: string;
+  isPlaceholder: boolean;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+function mapGeneratedDocument(wire: WireGeneratedDocument): GeneratedDoc {
+  return {
+    id: wire.id,
+    title: wire.title,
+    format: wire.format,
+    prompt: wire.prompt,
+    isPlaceholder: wire.is_placeholder,
+    sizeBytes: wire.size_bytes,
+    createdAt: wire.created_at,
+  };
+}
+
+export async function listGeneratedDocuments(): Promise<GeneratedDoc[]> {
+  const wireDocs = await request<WireGeneratedDocument[]>("/v1/generated-documents");
+  return wireDocs.map(mapGeneratedDocument);
+}
+
+export async function createGeneratedDocument(prompt: string, format: GeneratedDocFormat): Promise<GeneratedDoc> {
+  const wireDoc = await request<WireGeneratedDocument>("/v1/generated-documents", {
+    method: "POST",
+    body: JSON.stringify({ prompt, format }),
+  });
+  return mapGeneratedDocument(wireDoc);
+}
+
+// Binary download needs a real fetch (not the JSON `request` helper) —
+// same auth-header pattern as extractFileText, but reading the response
+// as a blob and triggering a real browser download rather than parsing
+// JSON out of it.
+export async function downloadGeneratedDocument(id: string, filename: string): Promise<void> {
+  const token = getToken();
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/v1/generated-documents/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+  } catch {
+    throw new ApiError(`Couldn't reach the Aurora API at ${API_URL}.`);
+  }
+
+  if (!response.ok) {
+    throw new ApiError(`Couldn't download ${filename}.`, response.status);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // --- Usage ---
 
 export interface Usage {
