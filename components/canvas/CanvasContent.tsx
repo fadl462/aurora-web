@@ -87,7 +87,7 @@ export function CanvasContent() {
     });
   }
 
-  async function handleSend(text: string, attachmentNames: string[]) {
+  async function handleSend(text: string, attachmentNames: string[], mode?: string) {
     const trimmed = text.trim();
     if (!trimmed && attachmentNames.length === 0) return;
     if (!conversationId) return;
@@ -104,7 +104,7 @@ export function CanvasContent() {
     setIsTyping(true);
 
     try {
-      const reply = await sendMessage(conversationId, trimmed);
+      const reply = await sendMessage(conversationId, trimmed, mode);
       setIsTyping(false);
       setMessages((prev) => [...prev, reply]);
       scrollToBottom();

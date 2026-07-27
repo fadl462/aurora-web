@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Agent } from "@/lib/types";
 import { ApiError, listAgents } from "@/lib/api";
+import { CreateAgentModal } from "./CreateAgentModal";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -13,6 +14,7 @@ export function AgentsContent() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +51,10 @@ export function AgentsContent() {
             Role-scoped assistants with their own tools, memory, and model preference
           </p>
         </div>
-        <button className="flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-2.5 text-[13px] font-semibold text-bg hover:bg-[#6C99FF]">
+        <button
+          onClick={() => setIsCreateOpen(true)}
+          className="flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-2.5 text-[13px] font-semibold text-bg hover:bg-[#6C99FF]"
+        >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0B0D12" strokeWidth={2.5}>
             <path d="M12 5v14M5 12h14" />
           </svg>
@@ -71,7 +76,7 @@ export function AgentsContent() {
             <Link
               key={agent.id}
               href={`/agents/${agent.id}`}
-              className="rounded-lg border border-border-soft bg-surface p-[18px] transition-transform hover:-translate-y-0.5 hover:border-[#33394A]"
+              className="rounded-lg border border-border-soft bg-surface p-[18px] transition-transform hover:-translate-y-0.5 hover:border-border-hover"
             >
               <div
                 className={`mb-3.5 flex h-[34px] w-[34px] items-center justify-center rounded-md text-[14px] font-semibold ${agent.avatarColorClass}`}
@@ -95,13 +100,27 @@ export function AgentsContent() {
             </Link>
           ))}
 
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border-soft p-[18px] text-text-faint">
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border-soft p-[18px] text-text-faint hover:border-border-hover hover:text-text-muted"
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="mb-2">
               <path d="M12 5v14M5 12h14" />
             </svg>
             <div className="text-[12.5px] font-medium">Build a custom agent</div>
-          </div>
+          </button>
         </div>
+      )}
+
+      {isCreateOpen && (
+        <CreateAgentModal
+          onClose={() => setIsCreateOpen(false)}
+          onCreated={(agent) => {
+            setAgents((prev) => [...prev, agent]);
+            setIsCreateOpen(false);
+            router.push(`/agents/${agent.id}`);
+          }}
+        />
       )}
     </div>
   );

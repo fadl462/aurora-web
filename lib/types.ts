@@ -24,6 +24,7 @@ export interface Citation {
 export interface Conversation {
   id: string;
   title: string;
+  projectId?: string;
   updatedAt: string;
   mode?: string;
 }
@@ -65,4 +66,11 @@ export interface PendingApproval {
   agentId: string;
   tier: ToolTier;
   action: string;
+}
+
+export interface InboxApproval extends PendingApproval {
+  agentName: string;
+  agentAvatarLetter: string;
+  agentAvatarColorClass: string;
+  createdAt: string;
 }

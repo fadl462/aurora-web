@@ -4,14 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Conversation, Project } from "@/lib/types";
-import { ApiError, listConversations, listProjects } from "@/lib/api";
-import { formatRelativeTime } from "@/lib/format";
+import { ApiError, getCurrentUser, listConversations, listProjects, type CurrentUser } from "@/lib/api";
+import { displayName, formatRelativeTime, timeOfDayGreeting, todayLabel } from "@/lib/format";
 
 const QUICK_ACTIONS = [
   { title: "Start a chat", sub: "Ask anything, attach files", href: "/chat", color: "bg-aurora-1/10 text-aurora-1" },
   { title: "New research", sub: "Multi-source, cited report", href: "/research", color: "bg-aurora-2/10 text-aurora-2" },
   { title: "Build automation", sub: "Trigger → tool → report", href: "/agents", color: "bg-aurora-3/10 text-aurora-3" },
-  { title: "Upload files", sub: "Add to Knowledge Vault", href: "/chat", color: "bg-aurora-4/10 text-aurora-4" },
+  { title: "Upload files", sub: "Attach to a chat message", href: "/chat", color: "bg-aurora-4/10 text-aurora-4" },
 ] as const;
 
 type LoadState = "loading" | "ready" | "error";
@@ -20,6 +20,7 @@ export function DashboardContent() {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [user, setUser] = useState<CurrentUser | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -28,10 +29,15 @@ export function DashboardContent() {
 
     async function load() {
       try {
-        const [conversationList, projectList] = await Promise.all([listConversations(), listProjects()]);
+        const [conversationList, projectList, currentUser] = await Promise.all([
+          listConversations(),
+          listProjects(),
+          getCurrentUser(),
+        ]);
         if (cancelled) return;
         setConversations(conversationList);
         setProjects(projectList);
+        setUser(currentUser);
         setState("ready");
       } catch (err) {
         if (cancelled) return;
@@ -52,9 +58,9 @@ export function DashboardContent() {
 
   return (
     <div className="mx-auto max-w-[920px] overflow-y-auto px-8 pb-16 pt-11">
-      <div className="mb-1.5 font-mono text-[11.5px] text-text-faint">FRIDAY, JULY 26 — ACCRA</div>
+      <div className="mb-1.5 font-mono text-[11.5px] text-text-faint">{todayLabel()}</div>
       <h1 className="mb-1.5 font-display text-[30px] font-semibold tracking-tight">
-        Good afternoon, Fadl <span className="aurora-gradient-text">✦</span>
+        {timeOfDayGreeting()}, {displayName(user)} <span className="aurora-gradient-text">✦</span>
       </h1>
       <p className="mb-[34px] text-[14.5px] text-text-muted">
         {state === "ready"
@@ -69,7 +75,7 @@ export function DashboardContent() {
           <Link
             key={a.title}
             href={a.href}
-            className="rounded-lg border border-border-soft bg-surface p-4 transition-transform hover:-translate-y-0.5 hover:border-[#33394A]"
+            className="rounded-lg border border-border-soft bg-surface p-4 transition-transform hover:-translate-y-0.5 hover:border-border-hover"
           >
             <div className={`mb-3 flex h-[30px] w-[30px] items-center justify-center rounded-md ${a.color}`}>
               <DotIcon />
@@ -107,7 +113,7 @@ export function DashboardContent() {
           {conversations.map((c) => (
             <Link
               key={c.id}
-              href="/chat"
+              href={`/chat/${c.id}`}
               className="flex items-center gap-3 border-b border-border-soft px-1.5 py-2.5 last:border-none hover:bg-surface-raised"
             >
               <div className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-md bg-surface-raised text-text-muted">
@@ -126,14 +132,20 @@ export function DashboardContent() {
         <div className="rounded-lg border border-border-soft bg-surface p-[18px]">
           <div className="mb-1 flex items-center justify-between">
             <div className="font-display text-[14.5px] font-semibold">Pinned projects</div>
-            <span className="text-[12px] text-text-faint">Manage</span>
+            <Link href="/projects" className="text-[12px] text-text-faint hover:text-text-muted">
+              Manage
+            </Link>
           </div>
           {projects.map((p) => (
-            <div key={p.id} className="flex items-center gap-2.5 rounded-sm px-1.5 py-2.5 hover:bg-surface-raised">
+            <Link
+              key={p.id}
+              href={`/projects/${p.id}`}
+              className="flex items-center gap-2.5 rounded-sm px-1.5 py-2.5 hover:bg-surface-raised"
+            >
               <span className={`h-2 w-2 flex-shrink-0 rounded-full ${p.color}`} />
               <div className="text-[13px] font-medium">{p.name}</div>
               <div className="ml-auto text-[11.5px] text-text-faint">{p.threadCount}</div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

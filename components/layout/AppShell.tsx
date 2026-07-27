@@ -16,6 +16,9 @@ const BREADCRUMBS: Record<string, string> = {
 function breadcrumbFor(pathname: string): string {
   if (BREADCRUMBS[pathname]) return BREADCRUMBS[pathname];
   if (pathname.startsWith("/agents/")) return "Agents · Console";
+  if (pathname === "/projects") return "Projects";
+  if (pathname.startsWith("/projects/")) return "Projects · Workspace";
+  if (pathname.startsWith("/chat/")) return "Chat";
   return "Aurora";
 }
 

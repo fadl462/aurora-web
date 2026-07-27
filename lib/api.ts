@@ -1,4 +1,4 @@
-import type { Agent, AgentRun, Citation, Conversation, Message, PendingApproval, Project, ToolTier } from "./types";
+import type { Agent, AgentRun, Citation, Conversation, InboxApproval, Message, PendingApproval, Project, ToolTier } from "./types";
 import { getToken } from "./auth";
 import { formatRelativeTime } from "./format";
 
@@ -40,6 +40,7 @@ interface WireMessage {
 interface WireConversation {
   id: string;
   title: string | null;
+  project_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -75,6 +76,7 @@ function mapConversation(wire: WireConversation): Conversation {
   return {
     id: wire.id,
     title: wire.title ?? "Untitled conversation",
+    projectId: wire.project_id ?? undefined,
     updatedAt: wire.updated_at,
   };
 }
@@ -120,12 +122,23 @@ export async function listConversations(): Promise<Conversation[]> {
   return wireConversations.map(mapConversation);
 }
 
-export async function createConversation(title?: string): Promise<string> {
+export async function createConversation(title?: string, projectId?: string): Promise<string> {
   const conversation = await request<WireConversation>("/v1/conversations", {
     method: "POST",
-    body: JSON.stringify({ title: title ?? null }),
+    body: JSON.stringify({ title: title ?? null, project_id: projectId ?? null }),
   });
   return conversation.id;
+}
+
+export async function getConversation(id: string): Promise<Conversation> {
+  const wire = await request<WireConversation>(`/v1/conversations/${id}`);
+  return mapConversation(wire);
+}
+
+export async function listConversationsForProject(projectId?: string): Promise<Conversation[]> {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const wireConversations = await request<WireConversation[]>(`/v1/conversations${query}`);
+  return wireConversations.map(mapConversation);
 }
 
 export async function listMessages(conversationId: string): Promise<Message[]> {
@@ -222,6 +235,24 @@ export async function listAgents(): Promise<Agent[]> {
   return wireAgents.map(mapAgent);
 }
 
+export async function createAgent(input: {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  tools?: { name: string; tier: ToolTier }[];
+}): Promise<Agent> {
+  const wireAgent = await request<WireAgent>("/v1/agents", {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.name,
+      description: input.description,
+      system_prompt: input.systemPrompt,
+      tools: input.tools ?? [],
+    }),
+  });
+  return mapAgent(wireAgent);
+}
+
 export async function getAgent(agentId: string): Promise<Agent> {
   const wireAgent = await request<WireAgent>(`/v1/agents/${agentId}`);
   return mapAgent(wireAgent);
@@ -243,6 +274,32 @@ export async function decideApproval(
   decision: "approve" | "deny",
 ): Promise<void> {
   await request(`/v1/agents/${agentId}/approvals/${approvalId}/${decision}`, { method: "POST" });
+}
+
+// --- Inbox (cross-agent approvals — backs the TopBar bell) ---
+
+interface WireInboxApproval extends WirePendingApproval {
+  agent_name: string;
+  agent_avatar_letter: string;
+  agent_avatar_color_class: string;
+}
+
+function mapInboxApproval(wire: WireInboxApproval): InboxApproval {
+  return {
+    id: wire.id,
+    agentId: wire.agent_id,
+    tier: wire.tier,
+    action: wire.action,
+    agentName: wire.agent_name,
+    agentAvatarLetter: wire.agent_avatar_letter,
+    agentAvatarColorClass: wire.agent_avatar_color_class,
+    createdAt: wire.created_at,
+  };
+}
+
+export async function listInboxApprovals(): Promise<InboxApproval[]> {
+  const wireApprovals = await request<WireInboxApproval[]>("/v1/agents/approvals");
+  return wireApprovals.map(mapInboxApproval);
 }
 
 // --- Projects ---
@@ -269,6 +326,19 @@ export async function listProjects(): Promise<Project[]> {
   return wireProjects.map(mapProject);
 }
 
+export async function getProject(id: string): Promise<Project> {
+  const wire = await request<WireProject>(`/v1/projects/${id}`);
+  return mapProject(wire);
+}
+
+export async function createProject(name: string, color?: string): Promise<Project> {
+  const wire = await request<WireProject>("/v1/projects", {
+    method: "POST",
+    body: JSON.stringify({ name, color: color ?? "bg-aurora-2" }),
+  });
+  return mapProject(wire);
+}
+
 // --- Documents ---
 
 interface WireDocument {
@@ -290,15 +360,16 @@ function mapDocument(wire: WireDocument): Doc {
   return { id: wire.id, title: wire.title, content: wire.content, updatedAt: wire.updated_at };
 }
 
-export async function listDocuments(): Promise<Doc[]> {
-  const wireDocs = await request<WireDocument[]>("/v1/documents");
+export async function listDocuments(projectId?: string): Promise<Doc[]> {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const wireDocs = await request<WireDocument[]>(`/v1/documents${query}`);
   return wireDocs.map(mapDocument);
 }
 
-export async function createDocument(title?: string, content?: string): Promise<Doc> {
+export async function createDocument(title?: string, content?: string, projectId?: string): Promise<Doc> {
   const wireDoc = await request<WireDocument>("/v1/documents", {
     method: "POST",
-    body: JSON.stringify({ title: title ?? "Untitled document", content: content ?? "" }),
+    body: JSON.stringify({ title: title ?? "Untitled document", content: content ?? "", project_id: projectId ?? null }),
   });
   return mapDocument(wireDoc);
 }
@@ -414,18 +485,20 @@ export async function getUsage(): Promise<Usage> {
 export interface CurrentUser {
   id: string;
   email: string;
+  name: string | null;
   createdAt: string;
 }
 
 interface WireUser {
   id: string;
   email: string;
+  name: string | null;
   created_at: string;
 }
 
 export async function getCurrentUser(): Promise<CurrentUser> {
   const wire = await request<WireUser>("/v1/auth/me");
-  return { id: wire.id, email: wire.email, createdAt: wire.created_at };
+  return { id: wire.id, email: wire.email, name: wire.name, createdAt: wire.created_at };
 }
 
 // --- File extraction ---

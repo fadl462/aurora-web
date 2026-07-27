@@ -2,9 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme tokens. Only surface/border/text swap between themes — the
+ * brand accent colors (aurora-1..4, accent, success, warning, danger)
+ * are deliberately NOT theme-dependent, defined as plain hex in
+ * tailwind.config.ts instead. They're Aurora's visual signature and
+ * look right on both a dark and a light surface; re-deriving them per
+ * theme would dilute the one thing that makes the UI recognizably
+ * Aurora rather than a generic light/dark shell.
+ *
+ * Values are RGB component triplets (not hex) so tailwind.config.ts can
+ * wrap them in rgb(var(--x) / <alpha-value>) — the standard pattern
+ * that keeps opacity modifiers (e.g. bg-surface/50) working with
+ * theme-swappable colors.
+ */
+:root {
+  --color-bg: 11 13 18;
+  --color-surface: 18 21 28;
+  --color-surface-raised: 23 27 36;
+  --color-surface-hover: 29 34 45;
+  --color-border: 38 43 54;
+  --color-border-soft: 29 34 45;
+  --color-border-hover: 51 57 74;
+  --color-text: 231 233 238;
+  --color-text-muted: 139 147 167;
+  --color-text-faint: 86 93 110;
+}
+
+[data-theme="light"] {
+  --color-bg: 247 248 250;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 238 241 246;
+  --color-surface-hover: 228 232 240;
+  --color-border: 216 222 232;
+  --color-border-soft: 231 234 240;
+  --color-border-hover: 195 203 218;
+  --color-text: 21 24 34;
+  --color-text-muted: 86 93 110;
+  --color-text-faint: 152 160 178;
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: #262b36 transparent;
+  scrollbar-color: rgb(var(--color-border)) transparent;
 }
 
 ::-webkit-scrollbar {
@@ -12,7 +52,7 @@
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #262b36;
+  background: rgb(var(--color-border));
   border-radius: 8px;
 }
 ::-webkit-scrollbar-track {

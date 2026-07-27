@@ -3,14 +3,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Message } from "@/lib/types";
-import { ApiError, createConversation, listMessages, sendMessage } from "@/lib/api";
+import { ApiError, createConversation, getConversation, listMessages, sendMessage } from "@/lib/api";
 import { useModel } from "@/lib/model-context";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingIndicator } from "./MessageBubble";
 
 type ConnectionState = "connecting" | "ready" | "error";
 
-export function ChatThread() {
+export function ChatThread({
+  existingConversationId,
+  projectId,
+}: {
+  // When set, resumes this real conversation (its actual message
+  // history) instead of always creating a brand new one. Without this,
+  // every visit to /chat — including clicking a "recent thread" —
+  // silently created a fresh, empty conversation and the old one was
+  // never actually reopened, even though it stayed listed everywhere.
+  existingConversationId?: string;
+  // When starting a NEW conversation (no existingConversationId), scopes
+  // it to this project — matching the real context-wall semantics the
+  // backend already enforces for conversations.
+  projectId?: string;
+} = {}) {
   const router = useRouter();
   const { model } = useModel();
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -26,18 +40,26 @@ export function ChatThread() {
     });
   }
 
-  // Real bootstrap: create an actual conversation via POST /v1/conversations
-  // against the backend in aurora-api, per docs/06-api-specification.md.
-  // No more seeded fake history — a fresh conversation starts empty, same
-  // as it would for a real user. A 401 here means there's no valid
-  // session — send them to /login rather than showing a confusing
-  // "backend unreachable" message when the backend is actually fine.
+  // Real bootstrap against the backend in aurora-api, per
+  // docs/06-api-specification.md. If existingConversationId is given,
+  // this actually resumes it (real ownership check via getConversation,
+  // then its real message history) rather than creating a new one. A
+  // 401 here means there's no valid session — send them to /login
+  // rather than showing a confusing "backend unreachable" message when
+  // the backend is actually fine. A 404 on a bad/foreign conversation id
+  // sends them back to a fresh chat rather than dead-ending.
   useEffect(() => {
     let cancelled = false;
 
     async function bootstrap() {
       try {
-        const id = await createConversation();
+        let id: string;
+        if (existingConversationId) {
+          await getConversation(existingConversationId); // real 404/ownership check
+          id = existingConversationId;
+        } else {
+          id = await createConversation(undefined, projectId);
+        }
         if (cancelled) return;
         setConversationId(id);
         const existing = await listMessages(id);
@@ -50,6 +72,10 @@ export function ChatThread() {
           router.push("/login");
           return;
         }
+        if (err instanceof ApiError && err.status === 404) {
+          router.push("/chat");
+          return;
+        }
         setErrorMessage(err instanceof ApiError ? err.message : "Couldn't connect to the Aurora API.");
         setConnection("error");
       }
@@ -59,9 +85,9 @@ export function ChatThread() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, existingConversationId, projectId]);
 
-  async function handleSend(text: string, attachmentNames: string[]) {
+  async function handleSend(text: string, attachmentNames: string[], mode?: string) {
     const trimmed = text.trim();
     if (!trimmed && attachmentNames.length === 0) return;
     if (!conversationId) return;
@@ -81,7 +107,7 @@ export function ChatThread() {
     setErrorMessage(null);
 
     try {
-      const assistantMessage = await sendMessage(conversationId, trimmed, undefined, model);
+      const assistantMessage = await sendMessage(conversationId, trimmed, mode, model);
       setIsTyping(false);
       setMessages((prev) => [...prev, assistantMessage]);
       scrollToBottom();

@@ -15,11 +15,12 @@ export function Composer({
   onSend,
   disabled,
 }: {
-  onSend: (text: string, attachmentNames: string[]) => void;
+  onSend: (text: string, attachmentNames: string[], mode?: string) => void;
   disabled?: boolean;
 }) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
+  const [researchMode, setResearchMode] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -51,7 +52,7 @@ export function Composer({
       ? `${attachmentBlocks}${value.trim() ? `\n\n---\n\n${value.trim()}` : ""}`
       : value;
 
-    onSend(finalContent, attachments.map((a) => a.name));
+    onSend(finalContent, attachments.map((a) => a.name), researchMode ? "research" : undefined);
     setValue("");
     setAttachments([]);
     requestAnimationFrame(autoGrow);
@@ -158,12 +159,19 @@ export function Composer({
             >
               <PaperclipIcon />
             </button>
-            <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-[12px] text-text-muted">
+            <button
+              type="button"
+              onClick={() => setResearchMode((v) => !v)}
+              title={researchMode ? "Research mode on — this message attaches real web search" : "Turn on Research mode for this message"}
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] ${
+                researchMode
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border bg-surface-raised text-text-muted hover:bg-surface-hover"
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${researchMode ? "bg-accent" : "bg-text-faint"}`} />
               Research mode
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </div>
+            </button>
           </div>
           <button
             onClick={submit}
