@@ -11,6 +11,7 @@ const BREADCRUMBS: Record<string, string> = {
   "/canvas": "Canvas · GAYO client brief",
   "/research": "Research",
   "/agents": "Agents",
+  "/settings": "Settings",
 };
 
 function breadcrumbFor(pathname: string): string {

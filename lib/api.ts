@@ -501,6 +501,40 @@ export async function getCurrentUser(): Promise<CurrentUser> {
   return { id: wire.id, email: wire.email, name: wire.name, createdAt: wire.created_at };
 }
 
+export async function updateCurrentUser(changes: { name: string }): Promise<CurrentUser> {
+  const wire = await request<WireUser>("/v1/auth/me", {
+    method: "PATCH",
+    body: JSON.stringify({ name: changes.name }),
+  });
+  return { id: wire.id, email: wire.email, name: wire.name, createdAt: wire.created_at };
+}
+
+// --- Sign-in activity (real device + best-effort location, never raw IP/UA) ---
+
+export interface LoginEvent {
+  id: string;
+  deviceLabel: string;
+  locationLabel: string | null;
+  createdAt: string;
+}
+
+interface WireLoginEvent {
+  id: string;
+  device_label: string;
+  location_label: string | null;
+  created_at: string;
+}
+
+export async function listLoginEvents(): Promise<LoginEvent[]> {
+  const wireEvents = await request<WireLoginEvent[]>("/v1/auth/sessions");
+  return wireEvents.map((w) => ({
+    id: w.id,
+    deviceLabel: w.device_label,
+    locationLabel: w.location_label,
+    createdAt: w.created_at,
+  }));
+}
+
 // --- File extraction ---
 
 export interface ExtractedFile {

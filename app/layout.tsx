@@ -48,7 +48,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{
             __html:
               "try{var t=localStorage.getItem('aurora-theme');" +
-              "document.documentElement.dataset.theme=(t==='light'?'light':'dark');" +
+              "var valid=['dark','light','nebula'];" +
+              "document.documentElement.dataset.theme=(valid.indexOf(t)!==-1?t:'dark');" +
               "}catch(e){document.documentElement.dataset.theme='dark';}",
           }}
         />

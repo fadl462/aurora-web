@@ -42,6 +42,27 @@
   --color-text-faint: 152 160 178;
 }
 
+/*
+ * Nebula: a deep violet-black palette, not just a re-tinted dark mode.
+ * The brand gradient (teal/blue/purple/pink) was designed against a
+ * neutral cool-gray background; here the background itself leans
+ * violet, so the gradient reads as something the surface is made of
+ * rather than a color painted on top of it — closer to what "Aurora"
+ * actually looks like at night than either of the other two themes.
+ */
+[data-theme="nebula"] {
+  --color-bg: 13 10 22;
+  --color-surface: 23 18 42;
+  --color-surface-raised: 30 24 54;
+  --color-surface-hover: 37 30 66;
+  --color-border: 50 42 82;
+  --color-border-soft: 37 30 66;
+  --color-border-hover: 69 58 110;
+  --color-text: 237 233 247;
+  --color-text-muted: 167 155 199;
+  --color-text-faint: 107 95 140;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--color-border)) transparent;

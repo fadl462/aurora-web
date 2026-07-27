@@ -7,13 +7,21 @@ import { decideApproval, listInboxApprovals } from "@/lib/api";
 import type { InboxApproval } from "@/lib/types";
 import { UsageMeter } from "./UsageMeter";
 import { MODEL_OPTIONS, useModel } from "@/lib/model-context";
-import { useTheme } from "@/lib/theme-context";
+import { useTheme, type Theme } from "@/lib/theme-context";
+
+const THEME_OPTIONS: { id: Theme; name: string; dot: string }[] = [
+  { id: "dark", name: "Dark", dot: "bg-[#12151C] border border-border" },
+  { id: "light", name: "Light", dot: "bg-white border border-border" },
+  { id: "nebula", name: "Nebula", dot: "bg-gradient-to-br from-aurora-2 via-aurora-3 to-[#0D0A16]" },
+];
 
 export function TopBar({ breadcrumb }: { breadcrumb: string }) {
   const router = useRouter();
   const [modelOpen, setModelOpen] = useState(false);
   const { model: selectedId, setModel } = useModel();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
+  const [themeOpen, setThemeOpen] = useState(false);
+  const themeWrapRef = useRef<HTMLDivElement>(null);
   const modelWrapRef = useRef<HTMLDivElement>(null);
 
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -26,6 +34,7 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
     function onClick(e: MouseEvent) {
       if (modelWrapRef.current && !modelWrapRef.current.contains(e.target as Node)) setModelOpen(false);
       if (inboxWrapRef.current && !inboxWrapRef.current.contains(e.target as Node)) setInboxOpen(false);
+      if (themeWrapRef.current && !themeWrapRef.current.contains(e.target as Node)) setThemeOpen(false);
     }
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
@@ -105,13 +114,38 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
           )}
         </div>
 
-        <button
-          onClick={toggleTheme}
-          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          className="flex h-8 w-8 items-center justify-center rounded-sm text-text-muted hover:bg-surface-raised hover:text-text"
-        >
-          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-        </button>
+        <div className="relative" ref={themeWrapRef}>
+          <button
+            onClick={() => setThemeOpen((v) => !v)}
+            title="Theme"
+            className="flex h-8 w-8 items-center justify-center rounded-sm text-text-muted hover:bg-surface-raised hover:text-text"
+          >
+            <span className={`h-3.5 w-3.5 rounded-full ${THEME_OPTIONS.find((t) => t.id === theme)?.dot}`} />
+          </button>
+
+          {themeOpen && (
+            <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-[170px] rounded-md border border-border bg-surface-raised p-1.5 shadow-2xl">
+              {THEME_OPTIONS.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    setTheme(t.id);
+                    setThemeOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-surface-hover"
+                >
+                  <span className={`h-3 w-3 flex-shrink-0 rounded-full ${t.dot}`} />
+                  <span className="text-[12.5px] font-medium">{t.name}</span>
+                  {t.id === theme && (
+                    <svg className="ml-auto flex-shrink-0 text-aurora-1" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="relative" ref={inboxWrapRef}>
           <button
@@ -207,22 +241,5 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
         </button>
       </div>
     </div>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
-    </svg>
   );
 }

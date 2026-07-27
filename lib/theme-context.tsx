@@ -18,9 +18,10 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type Theme = "dark" | "light";
+export type Theme = "dark" | "light" | "nebula";
 
 const STORAGE_KEY = "aurora-theme";
+const VALID_THEMES: Theme[] = ["dark", "light", "nebula"];
 
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
@@ -29,12 +30,12 @@ function applyTheme(theme: Theme) {
 function getStoredTheme(): Theme {
   if (typeof window === "undefined") return "dark";
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  return stored === "light" ? "light" : "dark";
+  return (VALID_THEMES as string[]).includes(stored ?? "") ? (stored as Theme) : "dark";
 }
 
 interface ThemeContextValue {
   theme: Theme;
-  toggleTheme: () => void;
+  setTheme: (theme: Theme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -43,23 +44,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Starts at "dark" to match the server-rendered default and the
   // blocking inline script's fallback — then syncs to whatever's
   // actually in localStorage once mounted. This can only mismatch for
-  // a single frame on a returning light-mode visitor, and the inline
-  // script (which runs before React even loads) already prevents that
-  // from being visible.
-  const [theme, setTheme] = useState<Theme>("dark");
+  // a single frame on a returning visitor with a non-default theme,
+  // and the inline script (which runs before React even loads) already
+  // prevents that from being visible.
+  const [theme, setThemeState] = useState<Theme>("dark");
 
   useEffect(() => {
-    setTheme(getStoredTheme());
+    setThemeState(getStoredTheme());
   }, []);
 
-  function toggleTheme() {
-    const next: Theme = theme === "dark" ? "light" : "dark";
-    setTheme(next);
+  function setTheme(next: Theme) {
+    setThemeState(next);
     applyTheme(next);
     window.localStorage.setItem(STORAGE_KEY, next);
   }
 
-  return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {
