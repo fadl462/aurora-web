@@ -10,7 +10,7 @@ import { MODEL_OPTIONS, useModel } from "@/lib/model-context";
 import { useTheme, type Theme } from "@/lib/theme-context";
 
 const THEME_OPTIONS: { id: Theme; name: string; dot: string }[] = [
-  { id: "dark", name: "Dark", dot: "bg-[#12151C] border border-border" },
+  { id: "dark", name: "Dark", dot: "bg-[#1D222D] border-2 border-text-faint" },
   { id: "light", name: "Light", dot: "bg-white border border-border" },
   { id: "nebula", name: "Nebula", dot: "bg-gradient-to-br from-aurora-2 via-aurora-3 to-[#0D0A16]" },
 ];
@@ -120,7 +120,13 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
             title="Theme"
             className="flex h-8 w-8 items-center justify-center rounded-sm text-text-muted hover:bg-surface-raised hover:text-text"
           >
-            <span className={`h-3.5 w-3.5 rounded-full ${THEME_OPTIONS.find((t) => t.id === theme)?.dot}`} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 2a10 10 0 0 0 0 20 5 5 0 0 0 0-10 5 5 0 0 1 0-10Z" fill="currentColor" stroke="none" />
+              <circle cx="7.5" cy="10.5" r="1" fill="currentColor" stroke="none" />
+              <circle cx="9" cy="15" r="1" fill="currentColor" stroke="none" />
+              <circle cx="14" cy="16" r="1" fill="currentColor" stroke="none" />
+            </svg>
           </button>
 
           {themeOpen && (

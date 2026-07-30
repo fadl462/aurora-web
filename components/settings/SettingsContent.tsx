@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ApiError, createBillingPortalSession, createCheckoutSession, getCurrentUser, getUsage, listLoginEvents, listPlans, signOutDevice, updateCurrentUser, type CurrentUser, type LoginEvent, type Plan, type Usage } from "@/lib/api";
+import { ApiError, cancelSubscription, createCheckoutSession, getCurrentUser, getUsage, listLoginEvents, listPlans, signOutDevice, updateCurrentUser, verifyCheckout, type CurrentUser, type LoginEvent, type Plan, type Usage } from "@/lib/api";
 import { formatRelativeTime, initials } from "@/lib/format";
 
 type LoadState = "loading" | "ready" | "error";
@@ -10,7 +10,12 @@ type LoadState = "loading" | "ready" | "error";
 export function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const checkoutStatus = searchParams.get("checkout"); // "success" | "cancelled" | null — set by Stripe Checkout redirect (see routers/billing.py)
+  // Paystack redirects back with ?reference=... (sometimes ?trxref=...
+  // instead) regardless of outcome — there's no separate success/cancel
+  // URL like Stripe had, so the real status has to be confirmed
+  // server-side via /v1/billing/verify rather than trusted from the URL.
+  const checkoutReference = searchParams.get("reference") ?? searchParams.get("trxref");
+  const [checkoutBannerState, setCheckoutBannerState] = useState<"none" | "checking" | "success" | "failed">("none");
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [loginEvents, setLoginEvents] = useState<LoginEvent[]>([]);
@@ -62,6 +67,35 @@ export function SettingsContent() {
     };
   }, [router]);
 
+  useEffect(() => {
+    if (!checkoutReference) return;
+    let cancelled = false;
+
+    async function verify() {
+      setCheckoutBannerState("checking");
+      try {
+        const result = await verifyCheckout(checkoutReference!);
+        if (cancelled) return;
+        setCheckoutBannerState(result.verified ? "success" : "failed");
+        if (result.verified) {
+          setUser((prev) => (prev ? { ...prev, planTier: result.planTier } : prev));
+        }
+      } catch {
+        if (!cancelled) setCheckoutBannerState("failed");
+      } finally {
+        // Clean the reference out of the URL either way, so refreshing
+        // the page doesn't re-verify the same transaction repeatedly.
+        router.replace("/settings");
+      }
+    }
+
+    verify();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkoutReference]);
+
   async function handleSaveName(e: React.FormEvent) {
     e.preventDefault();
     setIsSaving(true);
@@ -92,14 +126,20 @@ export function SettingsContent() {
     }
   }
 
-  async function handleManageBilling() {
-    setBillingBusyPlanId("__portal__");
+  async function handleCancelSubscription() {
+    const confirmed = window.confirm(
+      "Cancel your subscription? You'll be moved back to the Free plan immediately.",
+    );
+    if (!confirmed) return;
+
+    setBillingBusyPlanId("__cancel__");
     setBillingError(null);
     try {
-      const url = await createBillingPortalSession();
-      window.location.href = url;
+      const updated = await cancelSubscription();
+      setUser(updated);
     } catch (err) {
-      setBillingError(err instanceof ApiError ? err.message : "Couldn't open the billing portal.");
+      setBillingError(err instanceof ApiError ? err.message : "Couldn't cancel your subscription.");
+    } finally {
       setBillingBusyPlanId(null);
     }
   }
@@ -182,14 +222,20 @@ export function SettingsContent() {
         </form>
       </div>
 
-      {checkoutStatus === "success" && (
+      {checkoutBannerState === "checking" && (
+        <div className="mb-6 rounded-md border border-border bg-surface-raised px-4 py-3 text-[13px] text-text-muted">
+          Confirming your payment with Paystack…
+        </div>
+      )}
+      {checkoutBannerState === "success" && (
         <div className="mb-6 rounded-md border border-aurora-1/30 bg-aurora-1/10 px-4 py-3 text-[13px] text-aurora-1">
           Subscription active — your new plan's token allowance is applied.
         </div>
       )}
-      {checkoutStatus === "cancelled" && (
-        <div className="mb-6 rounded-md border border-border bg-surface-raised px-4 py-3 text-[13px] text-text-muted">
-          Checkout cancelled — no changes were made to your plan.
+      {checkoutBannerState === "failed" && (
+        <div className="mb-6 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-[13px] text-warning">
+          Couldn't confirm that payment. If Paystack charged you, this usually resolves within a minute as the
+          webhook catches up — check back shortly before retrying.
         </div>
       )}
 
@@ -198,11 +244,11 @@ export function SettingsContent() {
           <div className="text-[11.5px] font-semibold uppercase tracking-wide text-text-faint">Plan</div>
           {user && user.planTier !== "free" && (
             <button
-              onClick={handleManageBilling}
-              disabled={billingBusyPlanId === "__portal__"}
-              className="text-[12px] font-medium text-accent hover:underline disabled:opacity-40"
+              onClick={handleCancelSubscription}
+              disabled={billingBusyPlanId === "__cancel__"}
+              className="text-[12px] font-medium text-warning hover:underline disabled:opacity-40"
             >
-              {billingBusyPlanId === "__portal__" ? "Opening…" : "Manage billing"}
+              {billingBusyPlanId === "__cancel__" ? "Cancelling…" : "Cancel subscription"}
             </button>
           )}
         </div>
@@ -230,8 +276,10 @@ export function SettingsContent() {
                   )}
                 </div>
                 <div className="mb-2 text-[12px] text-text-faint">
-                  {plan.monthlyPriceUsd === 0 ? "Free" : `$${plan.monthlyPriceUsd}/mo`} ·{" "}
-                  {plan.tokenAllowance.toLocaleString()} tokens/mo
+                  {plan.monthlyPrice === 0
+                    ? "Free"
+                    : `${plan.currency === "GHS" ? "GH₵" : plan.currency + " "}${plan.monthlyPrice}/mo`}{" "}
+                  · {plan.tokenAllowance.toLocaleString()} tokens/mo
                 </div>
                 {!isCurrent && plan.purchasable && (
                   <button

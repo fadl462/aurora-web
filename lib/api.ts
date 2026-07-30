@@ -571,12 +571,13 @@ export async function updateCurrentUser(changes: { name: string }): Promise<Curr
   return { id: wire.id, email: wire.email, name: wire.name, planTier: wire.plan_tier, createdAt: wire.created_at };
 }
 
-// --- Billing ---
+// --- Billing (real Paystack integration — Stripe doesn't operate directly in Ghana) ---
 
 export interface Plan {
   id: string;
   name: string;
-  monthlyPriceUsd: number;
+  monthlyPrice: number;
+  currency: string;
   tokenAllowance: number;
   purchasable: boolean;
 }
@@ -584,7 +585,8 @@ export interface Plan {
 interface WirePlan {
   id: string;
   name: string;
-  monthly_price_usd: number;
+  monthly_price: number;
+  currency: string;
   token_allowance: number;
   purchasable: boolean;
 }
@@ -594,7 +596,8 @@ export async function listPlans(): Promise<Plan[]> {
   return wirePlans.map((p) => ({
     id: p.id,
     name: p.name,
-    monthlyPriceUsd: p.monthly_price_usd,
+    monthlyPrice: p.monthly_price,
+    currency: p.currency,
     tokenAllowance: p.token_allowance,
     purchasable: p.purchasable,
   }));
@@ -608,9 +611,16 @@ export async function createCheckoutSession(planId: string): Promise<string> {
   return wire.checkout_url;
 }
 
-export async function createBillingPortalSession(): Promise<string> {
-  const wire = await request<{ portal_url: string }>("/v1/billing/portal");
-  return wire.portal_url;
+export async function verifyCheckout(reference: string): Promise<{ planTier: string; verified: boolean }> {
+  const wire = await request<{ plan_tier: string; verified: boolean }>(
+    `/v1/billing/verify?reference=${encodeURIComponent(reference)}`,
+  );
+  return { planTier: wire.plan_tier, verified: wire.verified };
+}
+
+export async function cancelSubscription(): Promise<CurrentUser> {
+  const wire = await request<WireUser>("/v1/billing/cancel", { method: "POST" });
+  return { id: wire.id, email: wire.email, name: wire.name, planTier: wire.plan_tier, createdAt: wire.created_at };
 }
 
 // --- Sign-in activity (real device + best-effort location, never raw IP/UA) ---
