@@ -148,6 +148,10 @@ export function Sidebar() {
             </Link>
             <button
               onClick={() => {
+                // logout() clears local tokens synchronously before its
+                // first await, so it's safe to navigate away immediately
+                // — the server-side revocation call finishes in the
+                // background and doesn't need to block the redirect.
                 logout();
                 router.push("/login");
               }}

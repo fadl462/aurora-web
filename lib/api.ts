@@ -1,5 +1,5 @@
 import type { Agent, AgentRun, Citation, Conversation, InboxApproval, Message, PendingApproval, Project, ToolTier } from "./types";
-import { getToken } from "./auth";
+import { getToken, refreshAccessToken } from "./auth";
 import { formatRelativeTime } from "./format";
 
 // Points at the real backend in aurora-api. No fallback to a fake
@@ -82,21 +82,38 @@ function mapConversation(wire: WireConversation): Conversation {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...init?.headers,
-      },
-    });
-  } catch {
-    throw new ApiError(
-      `Couldn't reach the Aurora API at ${API_URL}. Is the backend running (uvicorn app.main:app)?`,
-    );
+  async function attempt(): Promise<Response> {
+    const token = getToken();
+    try {
+      return await fetch(`${API_URL}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...init?.headers,
+        },
+      });
+    } catch {
+      throw new ApiError(
+        `Couldn't reach the Aurora API at ${API_URL}. Is the backend running (uvicorn app.main:app)?`,
+      );
+    }
+  }
+
+  let response = await attempt();
+
+  // A 401 here almost always means the short-lived access token expired
+  // — not that the person needs to see a login screen. Silently refresh
+  // once and retry the exact same request before giving up. If the
+  // refresh itself fails (refresh token expired/revoked too), that's a
+  // real "please log in again" — surface it as a 401 like any other.
+  if (response.status === 401) {
+    try {
+      await refreshAccessToken();
+      response = await attempt();
+    } catch {
+      // refresh failed — fall through and surface the original 401 below
+    }
   }
 
   if (!response.ok) {
@@ -382,6 +399,38 @@ export async function updateDocument(id: string, changes: { title?: string; cont
   return mapDocument(wireDoc);
 }
 
+// --- Document version history ---
+
+export interface DocumentVersion {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+interface WireDocumentVersion {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+}
+
+function mapDocumentVersion(wire: WireDocumentVersion): DocumentVersion {
+  return { id: wire.id, title: wire.title, content: wire.content, createdAt: wire.created_at };
+}
+
+export async function listDocumentVersions(documentId: string): Promise<DocumentVersion[]> {
+  const wireVersions = await request<WireDocumentVersion[]>(`/v1/documents/${documentId}/versions`);
+  return wireVersions.map(mapDocumentVersion);
+}
+
+export async function restoreDocumentVersion(documentId: string, versionId: string): Promise<Doc> {
+  const wireDoc = await request<WireDocument>(`/v1/documents/${documentId}/versions/${versionId}/restore`, {
+    method: "POST",
+  });
+  return mapDocument(wireDoc);
+}
+
 // --- Generated Documents (real .pptx/.docx/.xlsx from a prompt) ---
 
 export type GeneratedDocFormat = "pptx" | "docx" | "xlsx";
@@ -436,14 +485,25 @@ export async function createGeneratedDocument(prompt: string, format: GeneratedD
 // as a blob and triggering a real browser download rather than parsing
 // JSON out of it.
 export async function downloadGeneratedDocument(id: string, filename: string): Promise<void> {
-  const token = getToken();
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}/v1/generated-documents/${id}/download`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
-  } catch {
-    throw new ApiError(`Couldn't reach the Aurora API at ${API_URL}.`);
+  async function attempt(): Promise<Response> {
+    const token = getToken();
+    try {
+      return await fetch(`${API_URL}/v1/generated-documents/${id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    } catch {
+      throw new ApiError(`Couldn't reach the Aurora API at ${API_URL}.`);
+    }
+  }
+
+  let response = await attempt();
+  if (response.status === 401) {
+    try {
+      await refreshAccessToken();
+      response = await attempt();
+    } catch {
+      // refresh failed — fall through, the 401 below surfaces as-is
+    }
   }
 
   if (!response.ok) {
@@ -486,6 +546,7 @@ export interface CurrentUser {
   id: string;
   email: string;
   name: string | null;
+  planTier: string;
   createdAt: string;
 }
 
@@ -493,12 +554,13 @@ interface WireUser {
   id: string;
   email: string;
   name: string | null;
+  plan_tier: string;
   created_at: string;
 }
 
 export async function getCurrentUser(): Promise<CurrentUser> {
   const wire = await request<WireUser>("/v1/auth/me");
-  return { id: wire.id, email: wire.email, name: wire.name, createdAt: wire.created_at };
+  return { id: wire.id, email: wire.email, name: wire.name, planTier: wire.plan_tier, createdAt: wire.created_at };
 }
 
 export async function updateCurrentUser(changes: { name: string }): Promise<CurrentUser> {
@@ -506,7 +568,49 @@ export async function updateCurrentUser(changes: { name: string }): Promise<Curr
     method: "PATCH",
     body: JSON.stringify({ name: changes.name }),
   });
-  return { id: wire.id, email: wire.email, name: wire.name, createdAt: wire.created_at };
+  return { id: wire.id, email: wire.email, name: wire.name, planTier: wire.plan_tier, createdAt: wire.created_at };
+}
+
+// --- Billing ---
+
+export interface Plan {
+  id: string;
+  name: string;
+  monthlyPriceUsd: number;
+  tokenAllowance: number;
+  purchasable: boolean;
+}
+
+interface WirePlan {
+  id: string;
+  name: string;
+  monthly_price_usd: number;
+  token_allowance: number;
+  purchasable: boolean;
+}
+
+export async function listPlans(): Promise<Plan[]> {
+  const wirePlans = await request<WirePlan[]>("/v1/billing/plans");
+  return wirePlans.map((p) => ({
+    id: p.id,
+    name: p.name,
+    monthlyPriceUsd: p.monthly_price_usd,
+    tokenAllowance: p.token_allowance,
+    purchasable: p.purchasable,
+  }));
+}
+
+export async function createCheckoutSession(planId: string): Promise<string> {
+  const wire = await request<{ checkout_url: string }>("/v1/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan_id: planId }),
+  });
+  return wire.checkout_url;
+}
+
+export async function createBillingPortalSession(): Promise<string> {
+  const wire = await request<{ portal_url: string }>("/v1/billing/portal");
+  return wire.portal_url;
 }
 
 // --- Sign-in activity (real device + best-effort location, never raw IP/UA) ---
@@ -535,6 +639,10 @@ export async function listLoginEvents(): Promise<LoginEvent[]> {
   }));
 }
 
+export async function signOutDevice(eventId: string): Promise<void> {
+  await request(`/v1/auth/sessions/${eventId}`, { method: "DELETE" });
+}
+
 // --- File extraction ---
 
 export interface ExtractedFile {
@@ -552,19 +660,30 @@ interface WireExtractedFile {
 }
 
 export async function extractFileText(file: File): Promise<ExtractedFile> {
-  const token = getToken();
   const formData = new FormData();
   formData.append("file", file);
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}/v1/files/extract`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: formData,
-    });
-  } catch {
-    throw new ApiError(`Couldn't reach the Aurora API at ${API_URL}.`);
+  async function attempt(): Promise<Response> {
+    const token = getToken();
+    try {
+      return await fetch(`${API_URL}/v1/files/extract`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: formData,
+      });
+    } catch {
+      throw new ApiError(`Couldn't reach the Aurora API at ${API_URL}.`);
+    }
+  }
+
+  let response = await attempt();
+  if (response.status === 401) {
+    try {
+      await refreshAccessToken();
+      response = await attempt();
+    } catch {
+      // refresh failed — fall through, the error below surfaces as-is
+    }
   }
 
   if (!response.ok) {

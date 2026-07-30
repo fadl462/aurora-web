@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Message } from "@/lib/types";
 import { ApiError, createConversation, sendMessage } from "@/lib/api";
 import { createDocument, listDocuments, updateDocument, type Doc } from "@/lib/api";
+import { listDocumentVersions, restoreDocumentVersion, type DocumentVersion } from "@/lib/api";
 import {
   createGeneratedDocument,
   downloadGeneratedDocument,
@@ -32,6 +33,11 @@ export function CanvasContent() {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [versions, setVersions] = useState<DocumentVersion[]>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const [generatedDocs, setGeneratedDocs] = useState<GeneratedDoc[]>([]);
   const [genPrompt, setGenPrompt] = useState("");
@@ -130,6 +136,34 @@ export function CanvasContent() {
     }, 800);
   }
 
+  async function handleOpenHistory() {
+    if (!doc) return;
+    setShowHistory(true);
+    setIsLoadingVersions(true);
+    try {
+      const list = await listDocumentVersions(doc.id);
+      setVersions(list);
+    } catch {
+      setVersions([]);
+    } finally {
+      setIsLoadingVersions(false);
+    }
+  }
+
+  async function handleRestore(versionId: string) {
+    if (!doc) return;
+    setRestoringId(versionId);
+    try {
+      const restored = await restoreDocumentVersion(doc.id, versionId);
+      setDoc(restored);
+      setShowHistory(false);
+    } catch {
+      // leave the panel open — the person can just try again
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
   async function handleGenerate() {
     const trimmed = genPrompt.trim();
     if (!trimmed || isGenerating) return;
@@ -203,6 +237,12 @@ export function CanvasContent() {
 
           <div className={`flex min-h-0 flex-col ${tab !== "doc" ? "hidden md:flex" : ""}`}>
             <PanelHeader label="Document">
+              <button
+                onClick={handleOpenHistory}
+                className="mr-2 text-[11px] font-medium text-text-faint hover:text-text-muted hover:underline"
+              >
+                History
+              </button>
               <span className="text-[11px] text-text-faint">
                 {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
               </span>
@@ -314,6 +354,65 @@ export function CanvasContent() {
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showHistory && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={() => setShowHistory(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[80vh] w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-border-soft px-5 py-4">
+              <div>
+                <div className="font-display text-[15px] font-semibold text-text">Version history</div>
+                <div className="text-[11.5px] text-text-faint">
+                  A checkpoint is saved every few minutes while you edit — not every keystroke.
+                </div>
+              </div>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm text-text-faint hover:bg-surface-hover hover:text-text"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              {isLoadingVersions && <div className="py-6 text-center text-[12.5px] text-text-faint">Loading…</div>}
+              {!isLoadingVersions && versions.length === 0 && (
+                <div className="py-6 text-center text-[12.5px] text-text-faint">
+                  No earlier versions yet — checkpoints appear as you keep editing.
+                </div>
+              )}
+              <div className="flex flex-col divide-y divide-border-soft">
+                {versions.map((v) => (
+                  <div key={v.id} className="flex items-center justify-between gap-3 py-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-medium text-text">{v.title || "Untitled"}</div>
+                      <div className="truncate text-[11.5px] text-text-faint">
+                        {v.content.slice(0, 80) || "(empty)"}
+                        {v.content.length > 80 ? "…" : ""}
+                      </div>
+                      <div className="text-[10.5px] text-text-faint">
+                        {new Date(v.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRestore(v.id)}
+                      disabled={restoringId !== null}
+                      className="flex-shrink-0 rounded-md border border-border bg-surface px-2.5 py-1.5 text-[12px] font-medium text-text-muted hover:bg-surface-hover hover:text-text disabled:opacity-40"
+                    >
+                      {restoringId === v.id ? "Restoring…" : "Restore"}
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

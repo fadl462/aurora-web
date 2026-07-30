@@ -1,16 +1,24 @@
-const TOKEN_KEY = "aurora_token";
+const ACCESS_TOKEN_KEY = "aurora_token";
+const REFRESH_TOKEN_KEY = "aurora_refresh_token";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+export function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+function setTokens(accessToken: string, refreshToken: string): void {
+  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+}
+
+function clearTokens(): void {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -49,7 +57,7 @@ export async function login(email: string, password: string): Promise<void> {
     );
   }
   const body = await response.json();
-  setToken(body.access_token);
+  setTokens(body.access_token, body.refresh_token);
 }
 
 export async function register(email: string, password: string): Promise<void> {
@@ -65,6 +73,63 @@ export async function register(email: string, password: string): Promise<void> {
   await login(email, password);
 }
 
-export function logout(): void {
-  clearToken();
+// Deduplicates concurrent refresh attempts. This matters because the
+// refresh token rotates on every use (server-side, see
+// auth.redeem_refresh_token) — it's single-use by design. If several
+// API calls all hit an expired access token around the same moment,
+// each independently calling /refresh would mean only the first
+// actually succeeds and every other one gets a 401 for trying to
+// reuse an already-rotated token, causing a spurious forced logout for
+// someone who did nothing wrong. Sharing one in-flight promise across
+// all of them means they all succeed together off a single real
+// refresh call.
+let refreshPromise: Promise<void> | null = null;
+
+export async function refreshAccessToken(): Promise<void> {
+  if (refreshPromise) return refreshPromise;
+
+  const currentRefreshToken = getRefreshToken();
+  if (!currentRefreshToken) {
+    throw new AuthError("No session to refresh — please log in.", 401);
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_URL}/v1/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: currentRefreshToken }),
+      });
+      if (!response.ok) {
+        clearTokens();
+        throw new AuthError(
+          await parseErrorMessage(response, "Session expired. Please log in again."),
+          response.status,
+        );
+      }
+      const body = await response.json();
+      setTokens(body.access_token, body.refresh_token);
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+export async function logout(): Promise<void> {
+  const refreshToken = getRefreshToken();
+  clearTokens();
+  if (!refreshToken) return;
+  // Best-effort real server-side revocation — the person is logged out
+  // locally either way, so a network hiccup here shouldn't block that.
+  try {
+    await fetch(`${API_URL}/v1/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  } catch {
+    // ignored — see comment above
+  }
 }

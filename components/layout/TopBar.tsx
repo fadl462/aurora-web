@@ -227,6 +227,9 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
 
         <button
           onClick={() => {
+            // logout() clears local tokens synchronously before its
+            // first await — safe to navigate immediately while the
+            // server-side revocation finishes in the background.
             logout();
             router.push("/login");
           }}
